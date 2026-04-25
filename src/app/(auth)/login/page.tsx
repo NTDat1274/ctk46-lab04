@@ -27,6 +27,14 @@ function getReasonMessage(value: string | string[] | undefined) {
     return "Đăng nhập GitHub thất bại. Vui lòng thử lại.";
   }
 
+  if (reason === "reset_invalid") {
+    return "Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.";
+  }
+
+  if (reason === "password_updated") {
+    return "Đổi mật khẩu thành công. Vui lòng đăng nhập lại.";
+  }
+
   return null;
 }
 

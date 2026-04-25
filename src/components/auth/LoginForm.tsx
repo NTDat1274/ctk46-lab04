@@ -52,7 +52,15 @@ export default function LoginForm({
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="password">Mật khẩu</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="password">Mật khẩu</Label>
+            <Link
+              href="/forgot-password"
+              className="text-xs text-primary hover:underline"
+            >
+              Quên mật khẩu?
+            </Link>
+          </div>
           <Input id="password" name="password" type="password" required />
         </div>
 
