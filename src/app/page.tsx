@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
   Card,
   CardContent,
@@ -10,16 +11,44 @@ import {
 } from "@/components/ui/card";
 
 export const revalidate = 60; // Revalidate trang mỗi 60 giây (ISR)
+const POSTS_PER_PAGE = 6;
 
-export default async function HomePage() {
+function getPageFromSearchParams(value: string | string[] | undefined) {
+  const raw = typeof value === "string" ? value : "1";
+  const page = Number.parseInt(raw, 10);
+
+  if (Number.isNaN(page) || page < 1) {
+    return 1;
+  }
+
+  return page;
+}
+
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const resolvedParams = await searchParams;
+  const currentPage = getPageFromSearchParams(resolvedParams.page);
+  const from = (currentPage - 1) * POSTS_PER_PAGE;
+  const to = from + POSTS_PER_PAGE - 1;
+
   const supabase = await createClient();
 
   // Fetch published posts
-  const { data: postsData, error } = await supabase
+  const {
+    data: postsData,
+    error,
+    count,
+  } = await supabase
     .from("posts")
-    .select("id, title, slug, excerpt, created_at, author_id")
+    .select("id, title, slug, excerpt, created_at, author_id", {
+      count: "exact",
+    })
     .eq("status", "published")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .range(from, to);
 
   if (error) {
     console.error("Error fetching posts:", {
@@ -28,6 +57,14 @@ export default async function HomePage() {
       details: error.details,
       hint: error.hint,
     });
+  }
+
+  const totalPosts = count ?? 0;
+  const totalPages =
+    totalPosts > 0 ? Math.ceil(totalPosts / POSTS_PER_PAGE) : 0;
+
+  if (totalPages > 0 && currentPage > totalPages) {
+    redirect(totalPages === 1 ? "/" : `/?page=${totalPages}`);
   }
 
   const authorIds = Array.from(
@@ -69,6 +106,12 @@ export default async function HomePage() {
     ...post,
     profile: profilesById.get(post.author_id) ?? null,
   }));
+
+  const hasPreviousPage = currentPage > 1;
+  const hasNextPage = totalPages > 0 && currentPage < totalPages;
+  const previousPageHref =
+    currentPage - 1 <= 1 ? "/" : `/?page=${currentPage - 1}`;
+  const nextPageHref = `/?page=${currentPage + 1}`;
 
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
@@ -125,6 +168,40 @@ export default async function HomePage() {
               </Card>
             );
           })}
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <div className="mt-10 flex items-center justify-center gap-3">
+          {hasPreviousPage ? (
+            <Link
+              href={previousPageHref}
+              className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Trang trước
+            </Link>
+          ) : (
+            <span className="inline-flex cursor-not-allowed items-center rounded-md border border-gray-200 bg-gray-100 px-3 py-2 text-sm font-medium text-gray-400">
+              Trang trước
+            </span>
+          )}
+
+          <span className="text-sm text-muted-foreground">
+            Trang {currentPage} / {totalPages}
+          </span>
+
+          {hasNextPage ? (
+            <Link
+              href={nextPageHref}
+              className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Trang sau
+            </Link>
+          ) : (
+            <span className="inline-flex cursor-not-allowed items-center rounded-md border border-gray-200 bg-gray-100 px-3 py-2 text-sm font-medium text-gray-400">
+              Trang sau
+            </span>
+          )}
         </div>
       )}
     </div>
