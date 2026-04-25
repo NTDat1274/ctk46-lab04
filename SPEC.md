@@ -2,7 +2,7 @@
 
 ## 1. Tổng quan dự án (Overview)
 - **Tên dự án:** Simple Blog
-- **Mô tả:** Ứng dụng web blog cá nhân cho phép người dùng đăng ký, đăng nhập, viết bài, quản lý bài viết của mình, và tương tác (bình luận, like) trên bài viết của người khác.
+- **Mô tả:** Ứng dụng web blog cá nhân cho phép người dùng đăng ký, đăng nhập, viết bài, quản lý bài viết của mình, và tương tác (bình luận, like) trên bài viết của người khác. Bao gồm hệ thống quản trị (Admin Dashboard) dành riêng cho quản trị viên.
 - **Tech Stack:**
   - **Frontend:** Next.js (App Router, Server Actions), React, TypeScript, Tailwind CSS.
   - **Backend & Database:** Supabase (PostgreSQL, GoTrue Auth, Realtime, Storage, RLS).
@@ -14,11 +14,19 @@
   - `id` (UUID, PK, FK tới `auth.users.id`)
   - `display_name` (Text, Nullable)
   - `avatar_url` (Text, Nullable)
+  - `role` (Text, Default: 'user') - Phân quyền ('user' hoặc 'admin')
   - `created_at` (TimestampTZ)
   - `updated_at` (TimestampTZ)
+- **`categories`**: Danh mục bài viết.
+  - `id` (UUID, PK)
+  - `name` (Text)
+  - `slug` (Text, Unique)
+  - `description` (Text, Nullable)
+  - `created_at` (TimestampTZ)
 - **`posts`**: Lưu trữ bài viết của blog.
   - `id` (UUID, PK)
   - `author_id` (UUID, FK tới `profiles.id`)
+  - `category_id` (UUID, Nullable, FK tới `categories.id`)
   - `title` (Text)
   - `slug` (Text, Unique)
   - `content` (Text)
@@ -39,20 +47,21 @@
   - *Primary Key: (post_id, user_id)*
 
 ### 2.2 Database Triggers
-- Tự động chèn dòng vào bảng `profiles` khi có user đăng ký mới trong `auth.users`.
+- Tự động chèn dòng vào bảng `profiles` khi có user đăng ký mới trong `auth.users` (default role là 'user').
 - Tự động tạo URL-friendly `slug` từ `title` trước khi Insert một `post`.
 - Tự động cập nhật trường `updated_at` mỗi khi có thay đổi trên `profiles` hoặc `posts`.
 
 ### 2.3 Row Level Security (RLS) Policies
-- **`profiles`**: Mọi người đều có thể SELECT. Chỉ user đang đăng nhập (authenticated) mới có thể UPDATE chính profile của họ.
+- **`profiles`**: Mọi người đều có thể SELECT. User đăng nhập có thể UPDATE profile của họ. Admin có toàn quyền.
+- **`categories`**: Mọi người đều có thể SELECT. Admin có toàn quyền (INSERT, UPDATE, DELETE).
 - **`posts`**: 
-  - SELECT: Ai cũng xem được bài viết `status = 'published'`. Tác giả xem được toàn bộ bài viết của mình (kể cả `draft`).
+  - SELECT: Ai cũng xem được bài viết `status = 'published'`. Tác giả xem được toàn bộ bài viết của mình. Admin xem được tất cả.
   - INSERT: Chỉ user đã đăng nhập được tạo.
-  - UPDATE/DELETE: Chỉ tác giả bài viết mới có quyền sửa/xóa bài của mình.
+  - UPDATE/DELETE: Tác giả bài viết hoặc Admin mới có quyền sửa/xóa bài.
 - **`comments`**: 
-  - SELECT: Ai cũng xem được bình luận của các bài viết đã 'published'.
+  - SELECT: Ai cũng xem được bình luận.
   - INSERT: Chỉ user đã đăng nhập được tạo bình luận.
-  - DELETE: Chỉ tác giả bình luận (hoặc tác giả bài viết) được quyền xóa.
+  - DELETE: Tác giả bình luận, tác giả bài viết, hoặc Admin được quyền xóa.
 - **`likes`**:
   - SELECT: Mọi người có thể xem lượt thích.
   - INSERT/DELETE: User chỉ được like/unlike với user_id của chính họ.
@@ -64,21 +73,31 @@ src/
 │   ├── (auth)/
 │   │   ├── login/page.tsx
 │   │   └── register/page.tsx
+│   ├── admin/                     # Phân hệ Admin
+│   │   ├── layout.tsx             # Admin Sidebar & Header
+│   │   ├── dashboard/page.tsx     # Thống kê tổng quan
+│   │   ├── categories/page.tsx    # Quản lý danh mục
+│   │   ├── posts/page.tsx         # Quản lý bài viết toàn hệ thống
+│   │   ├── comments/page.tsx      # Quản lý bình luận
+│   │   └── users/page.tsx         # Quản lý người dùng & phân quyền
 │   ├── auth/callback/route.ts
-│   ├── dashboard/
+│   ├── dashboard/                 # User Dashboard
 │   │   ├── edit/[id]/page.tsx
 │   │   ├── new/page.tsx
 │   │   └── page.tsx
 │   ├── posts/[slug]/page.tsx
 │   ├── profile/page.tsx           # Bonus
 │   ├── search/page.tsx            # Bonus
-│   ├── actions/auth.ts
+│   ├── actions/
+│   │   ├── auth.ts
+│   │   └── admin.ts               # Server actions cho Admin
 │   ├── globals.css
 │   ├── layout.tsx
 │   └── page.tsx                   # Trang chủ
 ├── components/
+│   ├── admin/                     # UI cho Admin (Tables, Stats Cards)
 │   ├── auth/                      # Login & Register Forms
-│   ├── dashboard/                 # Quản lý Post (Forms, Lists, Delete btn)
+│   ├── dashboard/                 # Quản lý Post của User
 │   ├── layout/                    # Header, Footer
 │   └── posts/                     # Post Detail, Comment Form & List, Like btn
 ├── lib/
@@ -90,34 +109,28 @@ middleware.ts
 
 ## 4. Đặc tả tính năng (Features & Logic)
 
-### 4.1. Authentication & Authorization
-- **Đăng ký / Đăng nhập:** Dùng Email/Password thông qua `supabase.auth.signUp` / `signInWithPassword`.
-- **OAuth:** Đăng nhập một chạm với GitHub qua `signInWithOAuth`.
-- **Middleware:** Cập nhật (refresh) JWT token tự động và ngăn chặn người dùng chưa đăng nhập truy cập các protected routes (`/dashboard`, `/profile`). Chuyển hướng người dùng đã đăng nhập ra khỏi trang `/login` và `/register`.
+### 4.1. Authentication, Authorization & Middleware
+- **Đăng ký / Đăng nhập:** Dùng Email/Password hoặc OAuth (GitHub).
+- **Middleware:** Cập nhật JWT token. 
+  - `/dashboard`, `/profile`: Yêu cầu đăng nhập.
+  - `/admin/*`: Yêu cầu đăng nhập VÀ tài khoản phải có `role === 'admin'`. Nếu không, redirect về `/`.
 
 ### 4.2. Public Pages (Trang công khai)
-- **Trang chủ (`/`)**: Truy xuất và hiển thị danh sách các bài viết có `status = 'published'` (sắp xếp mới nhất). Tích hợp phân trang (Pagination).
-- **Chi tiết bài viết (`/posts/[slug]`)**: 
-  - Hiển thị đầy đủ nội dung bài viết.
-  - Tích hợp `react-markdown` để render nội dung.
-  - Hiển thị danh sách bình luận (có cập nhật Realtime).
-  - Có form để viết bình luận (ẩn đi hoặc yêu cầu đăng nhập nếu user là khách).
+- **Trang chủ (`/`)**: Hiển thị danh sách các bài viết `published`. Tích hợp phân trang. Lọc theo `category` nếu có.
+- **Chi tiết bài viết (`/posts/[slug]`)**: Nội dung, Markdown, Bình luận (Realtime).
 
-### 4.3. Protected Pages (Trang bảo mật)
-- **Dashboard (`/dashboard`)**: Hiển thị tất cả bài viết của user đang đăng nhập (bao gồm bản nháp và đã xuất bản). Cung cấp nút chuyển đến trang Viết bài và Chỉnh sửa.
-- **Tạo/Chỉnh sửa Bài viết**: 
-  - Cung cấp form gồm Tiêu đề, Tóm tắt, Nội dung, và Trạng thái.
-  - Nếu tạo mới: Gọi `supabase.from('posts').insert()`.
-  - Nếu chỉnh sửa: Fetch dữ liệu cũ để điền vào form, gọi `.update()`.
-- **Xóa Bài viết**: Có hộp thoại xác nhận trước khi gọi `.delete()`.
+### 4.3. Protected Pages (User Dashboard)
+- **Dashboard (`/dashboard`)**: Quản lý bài viết cá nhân (tạo, sửa, xóa bản nháp/bản publish).
 
-### 4.4. Tính năng nâng cao (Bonus)
-- **User Profile (`/profile`)**: Form cho phép user đổi tên `display_name` và cập nhật ảnh đại diện `avatar_url`.
-- **Supabase Storage**: 
-  - Tạo bucket `blog-images`.
-  - Cung cấp API/Server Action để xử lý upload file từ frontend và trả về Public URL, dùng để chèn vào nội dung bài viết hoặc cập nhật ảnh đại diện.
-- **Like/Unlike**: 
-  - Hiển thị số lượng thích bài viết realtime (hoặc qua data fetching ban đầu).
-  - Giao diện dạng Toggle button (thêm/xóa dòng tương ứng trong bảng `likes`).
-- **Full-text Search (`/search?q=...`)**: 
-  - Truy vấn `posts` bằng textSearch của Supabase để tìm trong `title` hoặc `content`.
+### 4.4. Phân hệ Quản trị (Admin Pages)
+- **Dashboard (`/admin/dashboard`)**: Hiển thị số liệu tổng quan (Tổng users, posts, comments).
+- **Quản lý Danh mục (`/admin/categories`)**: Tạo, sửa, xóa danh mục bài viết.
+- **Quản lý Bài viết (`/admin/posts`)**: Xem toàn bộ bài viết trên hệ thống, quyền đổi trạng thái hoặc xóa bài viết vi phạm.
+- **Quản lý Bình luận (`/admin/comments`)**: Xem tất cả bình luận, quyền xóa bình luận.
+- **Quản lý Người dùng (`/admin/users`)**: Xem danh sách user, đổi `role` (cấp quyền admin).
+
+### 4.5. Tính năng nâng cao (Bonus)
+- **User Profile (`/profile`)**: Đổi tên `display_name`, cập nhật `avatar_url`.
+- **Supabase Storage**: Quản lý file hình ảnh bài viết và avatar.
+- **Like/Unlike**: Realtime.
+- **Full-text Search (`/search?q=...`)**: Tìm kiếm bài viết.

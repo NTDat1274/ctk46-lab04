@@ -9,11 +9,36 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      categories: {
+        Row: {
+          id: string
+          name: string
+          slug: string
+          description: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          slug: string
+          description?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          slug?: string
+          description?: string | null
+          created_at?: string
+        }
+        Relationships: any[]
+      }
       profiles: {
         Row: {
           id: string
           display_name: string | null
           avatar_url: string | null
+          role: string
           created_at: string
           updated_at: string
         }
@@ -21,6 +46,7 @@ export type Database = {
           id: string
           display_name?: string | null
           avatar_url?: string | null
+          role?: string
           created_at?: string
           updated_at?: string
         }
@@ -28,6 +54,7 @@ export type Database = {
           id?: string
           display_name?: string | null
           avatar_url?: string | null
+          role?: string
           created_at?: string
           updated_at?: string
         }
@@ -37,6 +64,7 @@ export type Database = {
         Row: {
           id: string
           author_id: string
+          category_id: string | null
           title: string
           slug: string
           content: string
@@ -49,6 +77,7 @@ export type Database = {
         Insert: {
           id?: string
           author_id: string
+          category_id?: string | null
           title: string
           slug: string
           content: string
@@ -61,6 +90,7 @@ export type Database = {
         Update: {
           id?: string
           author_id?: string
+          category_id?: string | null
           title?: string
           slug?: string
           content?: string
